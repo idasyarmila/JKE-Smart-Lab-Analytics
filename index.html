@@ -616,6 +616,11 @@
     .form-row { grid-template-columns: 1fr; }
     .settings-grid { grid-template-columns: 1fr; }
   }
+  @media print {
+    #sidebar, #main, #sideOverlay, #toast { display: none !important; }
+    .no-print { display: none !important; }
+    #printArea { display: block !important; }
+  }
 </style>
 </head>
 <body>
@@ -839,6 +844,22 @@
     <!-- VIEW: REPORTS                                   -->
     <!-- ═══════════════════════════════════════════════ -->
     <div id="view-reports" class="view">
+      <!-- Toolbar Cetak -->
+      <div class="panel" style="margin-bottom:16px">
+        <div class="panel-header">
+          <i class="fas fa-print panel-icon"></i>
+          <h3>Cetak Laporan</h3>
+        </div>
+        <div class="panel-body" style="display:flex;gap:10px;flex-wrap:wrap">
+          <button class="btn btn-primary" onclick="openPrintModal('all')"><i class="fas fa-file-alt"></i> Laporan Keseluruhan JKE</button>
+          <button class="btn btn-secondary" onclick="openPrintModal('program')"><i class="fas fa-graduation-cap"></i> Laporan Mengikut Program</button>
+          <button class="btn btn-secondary" onclick="openPrintModal('lab')"><i class="fas fa-flask"></i> Laporan Mengikut Makmal</button>
+          <button class="btn btn-secondary" onclick="openPrintModal('equipment')"><i class="fas fa-tools"></i> Senarai Peralatan</button>
+          <button class="btn btn-secondary" onclick="openPrintModal('maintenance')"><i class="fas fa-wrench"></i> Laporan Penyelenggaraan</button>
+          <button class="btn btn-secondary" onclick="openPrintModal('status')"><i class="fas fa-heartbeat"></i> Laporan Status Peralatan</button>
+        </div>
+      </div>
+
       <div class="section-grid grid-2" style="margin-bottom:16px">
         <div class="panel">
           <div class="panel-header"><i class="fas fa-chart-line panel-icon"></i><h3>Ringkasan Mengikut Program</h3></div>
@@ -1082,6 +1103,48 @@
 
 <!-- TOAST -->
 <div id="toast"><i class="fas fa-check-circle" style="color:var(--accent-green)"></i><span id="toastMsg"></span></div>
+
+<!-- ═══ MODAL: PILIHAN CETAK ═══ -->
+<div class="modal-overlay" id="printModal">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-header">
+      <i class="fas fa-print" style="color:var(--accent-green)"></i>
+      <h3 id="printModalTitle">Cetak Laporan</h3>
+      <button class="modal-close" onclick="closeModal('printModal')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div id="printFilterWrap" style="display:none">
+        <div class="form-group" id="printProgramGroup" style="display:none">
+          <label>Pilih Program</label>
+          <select class="form-control" id="printProgram">
+            <option value="">Semua Program</option>
+          </select>
+        </div>
+        <div class="form-group" id="printLabGroup" style="display:none">
+          <label>Pilih Makmal</label>
+          <select class="form-control" id="printLab">
+            <option value="">Semua Makmal</option>
+          </select>
+        </div>
+      </div>
+      <p style="font-size:12px;color:var(--text-muted);line-height:1.6" id="printDesc">
+        Laporan akan dijana mengikut data semasa dalam sistem.
+      </p>
+      <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-top:12px;font-size:11px;color:var(--text-muted)">
+        <i class="fas fa-info-circle" style="color:var(--accent-blue)"></i>
+        Dialog pencetak akan dibuka. Pilih <strong style="color:var(--text-primary)">pencetak fizikal</strong> atau pilih
+        <strong style="color:var(--text-primary)">"Save as PDF"</strong> untuk menyimpan sebagai fail PDF.
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('printModal')">Batal</button>
+      <button class="btn btn-primary" id="printGoBtn" onclick="executePrint()"><i class="fas fa-print"></i> Cetak Sekarang</button>
+    </div>
+  </div>
+</div>
+
+<!-- KAWASAN CETAKAN TERSEMBUNYI -->
+<div id="printArea" style="display:none"></div>
 
 <script>
 // ═══════════════════════════════════════════════════════════
@@ -2148,6 +2211,262 @@ document.querySelectorAll('.modal-overlay').forEach(o=>{
   updateAlertBadge();
   renderDashboard();
 })();
+
+// ═══════════════════════════════════════════════════════════
+//  PRINT MODULE
+// ═══════════════════════════════════════════════════════════
+let _printType = 'all';
+
+function openPrintModal(type) {
+  _printType = type;
+  const titles = {
+    all:         'Laporan Keseluruhan Jabatan JKE',
+    program:     'Laporan Mengikut Program',
+    lab:         'Laporan Mengikut Makmal',
+    equipment:   'Senarai Peralatan',
+    maintenance: 'Laporan Penyelenggaraan',
+    status:      'Laporan Status Peralatan'
+  };
+  const descs = {
+    all:         'Jana laporan lengkap merangkumi semua program, makmal, peralatan dan analisis jabatan.',
+    program:     'Jana laporan ringkasan mengikut program pengajian yang dipilih.',
+    lab:         'Jana laporan terperinci mengikut makmal yang dipilih.',
+    equipment:   'Jana senarai lengkap semua peralatan beserta status terkini.',
+    maintenance: 'Jana rekod sejarah penyelenggaraan semua peralatan.',
+    status:      'Jana laporan status peralatan mengikut program atau makmal.'
+  };
+  document.getElementById('printModalTitle').textContent = titles[type];
+  document.getElementById('printDesc').textContent = descs[type];
+
+  // Populate dropdowns
+  const programs = load(KEYS.programs);
+  const labs = load(KEYS.labs);
+  const progSel = document.getElementById('printProgram');
+  progSel.innerHTML = '<option value="">Semua Program</option>';
+  programs.forEach(p=>{ const o=document.createElement('option'); o.value=p.id; o.textContent=p.name; progSel.appendChild(o); });
+
+  const labSel = document.getElementById('printLab');
+  labSel.innerHTML = '<option value="">Semua Makmal</option>';
+  labs.forEach(l=>{ const o=document.createElement('option'); o.value=l.id; o.textContent=l.name; labSel.appendChild(o); });
+
+  // Show/hide filter fields
+  const wrap = document.getElementById('printFilterWrap');
+  const progGrp = document.getElementById('printProgramGroup');
+  const labGrp = document.getElementById('printLabGroup');
+  wrap.style.display = (type==='all'||type==='equipment'||type==='maintenance') ? 'none' : 'block';
+  progGrp.style.display = (type==='program'||type==='status') ? 'block' : 'none';
+  labGrp.style.display = (type==='lab'||type==='status') ? 'block' : 'none';
+
+  openModal('printModal');
+}
+
+function executePrint() {
+  closeModal('printModal');
+  const progId = document.getElementById('printProgram').value;
+  const labId  = document.getElementById('printLab').value;
+  const html = buildReportHTML(_printType, progId, labId);
+  const printArea = document.getElementById('printArea');
+  printArea.innerHTML = html;
+  printArea.style.display = 'block';
+  // Sembunyikan dashboard semasa cetak
+  document.getElementById('sidebar').classList.add('no-print');
+  document.getElementById('main').classList.add('no-print');
+  setTimeout(()=>{
+    window.print();
+    printArea.style.display = 'none';
+    printArea.innerHTML = '';
+    document.getElementById('sidebar').classList.remove('no-print');
+    document.getElementById('main').classList.remove('no-print');
+  }, 300);
+}
+
+function buildReportHTML(type, progId, labId) {
+  const programs = load(KEYS.programs);
+  const labs     = load(KEYS.labs);
+  const allEq    = load(KEYS.equipment);
+  const allMaint = load(KEYS.maintenance);
+  const settings = loadObj(KEYS.settings);
+  const now      = new Date();
+  const dtStr    = now.toLocaleDateString('ms-MY',{day:'2-digit',month:'long',year:'numeric'}) +
+                   ' | ' + now.toLocaleTimeString('ms-MY',{hour:'2-digit',minute:'2-digit'});
+
+  const titles = {
+    all:         'Laporan Keseluruhan Jabatan JKE',
+    program:     'Laporan Mengikut Program',
+    lab:         'Laporan Mengikut Makmal',
+    equipment:   'Senarai Peralatan',
+    maintenance: 'Laporan Penyelenggaraan',
+    status:      'Laporan Status Peralatan'
+  };
+
+  // Tentukan skop data
+  let scopeLabel = 'Semua Program & Makmal';
+  let filteredLabs = labs;
+  let filteredEq   = allEq;
+  if(progId) {
+    const prog = programs.find(p=>p.id===progId);
+    scopeLabel = prog ? prog.name : scopeLabel;
+    filteredLabs = labs.filter(l=>l.program_id===progId);
+  }
+  if(labId) {
+    const lab = labs.find(l=>l.id===labId);
+    scopeLabel = lab ? lab.name : scopeLabel;
+    filteredLabs = labs.filter(l=>l.id===labId);
+  }
+  filteredEq = allEq.filter(e=>filteredLabs.some(l=>l.id===e.lab_id));
+
+  const kpis = {
+    total:    filteredEq.length,
+    ok:       filteredEq.filter(e=>e.status==='Berfungsi').length,
+    broken:   filteredEq.filter(e=>e.status==='Rosak').length,
+    maintain: filteredEq.filter(e=>e.status==='Selenggara').length,
+    inactive: filteredEq.filter(e=>e.status==='Tidak Aktif').length,
+    newE:     filteredEq.filter(e=>e.status==='Baharu').length
+  };
+
+  const logosPart = `
+    <div class="rpt-logos">
+      <img src="logo pkb.jpg" alt="Logo PKB" class="rpt-logo-img" onerror="this.style.display='none'">
+      <div class="rpt-title-block">
+        <div class="rpt-inst">Politeknik Kota Bharu &bull; Jabatan Kejuruteraan Elektrik</div>
+        <div class="rpt-doctitle">${titles[type]}</div>
+        <div class="rpt-scope">${scopeLabel}</div>
+      </div>
+      <img src="logo jke.png" alt="Logo JKE" class="rpt-logo-img" onerror="this.style.display='none'">
+    </div>
+    <div class="rpt-meta">
+      <span>Tarikh Cetak: <strong>${dtStr}</strong></span>
+      <span>Sistem: JKE Smart Lab Analytics v1.0</span>
+    </div>
+    <hr class="rpt-hr">`;
+
+  const kpiPart = `
+    <div class="rpt-kpi-grid">
+      <div class="rpt-kpi"><div class="rpt-kpi-val">${kpis.total}</div><div class="rpt-kpi-lbl">Jumlah Aset</div></div>
+      <div class="rpt-kpi rpt-ok"><div class="rpt-kpi-val">${kpis.ok}</div><div class="rpt-kpi-lbl">Berfungsi</div></div>
+      <div class="rpt-kpi rpt-br"><div class="rpt-kpi-val">${kpis.broken}</div><div class="rpt-kpi-lbl">Rosak</div></div>
+      <div class="rpt-kpi rpt-mn"><div class="rpt-kpi-val">${kpis.maintain}</div><div class="rpt-kpi-lbl">Selenggara</div></div>
+      <div class="rpt-kpi rpt-in"><div class="rpt-kpi-val">${kpis.inactive}</div><div class="rpt-kpi-lbl">Tidak Aktif</div></div>
+    </div>`;
+
+  let bodyPart = '';
+
+  if(type==='all' || type==='program') {
+    // Ringkasan program
+    bodyPart += '<h2 class="rpt-section-title">Ringkasan Mengikut Program</h2>';
+    bodyPart += '<table class="rpt-table"><thead><tr><th>Program</th><th>Makmal</th><th>Jumlah Aset</th><th>Berfungsi</th><th>Rosak</th><th>Selenggara</th><th>Skor</th></tr></thead><tbody>';
+    const progList = progId ? programs.filter(p=>p.id===progId) : programs;
+    progList.forEach(p=>{
+      const pLabs = labs.filter(l=>l.program_id===p.id);
+      const pEq   = allEq.filter(e=>pLabs.some(l=>l.id===e.lab_id));
+      if(!pEq.length) return;
+      const ok=pEq.filter(e=>e.status==='Berfungsi').length;
+      const br=pEq.filter(e=>e.status==='Rosak').length;
+      const mn=pEq.filter(e=>e.status==='Selenggara').length;
+      const sc=pLabs.length?Math.round(pLabs.reduce((s,l)=>s+calcLabHealth(l.id,allEq).score,0)/pLabs.length):0;
+      bodyPart += `<tr><td>${p.name}</td><td>${pLabs.length}</td><td>${pEq.length}</td><td class="td-ok">${ok}</td><td class="td-br">${br}</td><td class="td-mn">${mn}</td><td><strong>${sc}%</strong></td></tr>`;
+    });
+    bodyPart += '</tbody></table>';
+  }
+
+  if(type==='all' || type==='lab' || type==='status') {
+    // Ringkasan makmal
+    bodyPart += '<h2 class="rpt-section-title">Ringkasan Mengikut Makmal</h2>';
+    bodyPart += '<table class="rpt-table"><thead><tr><th>Makmal</th><th>Program</th><th>Jumlah Aset</th><th>Berfungsi</th><th>Rosak</th><th>Selenggara</th><th>Skor Kesihatan</th><th>Tahap</th></tr></thead><tbody>';
+    filteredLabs.forEach(lab=>{
+      const h = calcLabHealth(lab.id, allEq);
+      if(!h.total) return;
+      const prog = programs.find(p=>p.id===lab.program_id);
+      bodyPart += `<tr><td>${lab.name}</td><td>${prog?prog.code:'-'}</td><td>${h.total}</td><td class="td-ok">${h.ok}</td><td class="td-br">${h.broken}</td><td class="td-mn">${h.maintain}</td><td><strong>${h.score}%</strong></td><td>${getScoreLabel(h.score)}</td></tr>`;
+    });
+    bodyPart += '</tbody></table>';
+  }
+
+  if(type==='equipment' || type==='all') {
+    // Senarai peralatan
+    bodyPart += '<h2 class="rpt-section-title">Senarai Peralatan</h2>';
+    bodyPart += '<table class="rpt-table"><thead><tr><th>#</th><th>No. Aset</th><th>Nama Peralatan</th><th>Model</th><th>Kategori</th><th>Makmal</th><th>Status</th><th>Selenggara</th></tr></thead><tbody>';
+    filteredEq.forEach((e,i)=>{
+      const statusMap = {'Berfungsi':'td-ok','Rosak':'td-br','Selenggara':'td-mn','Tidak Aktif':'td-in','Baharu':'td-nw'};
+      bodyPart += `<tr><td>${i+1}</td><td class="td-mono">${e.asset_no}</td><td>${e.name}</td><td>${e.model||'-'}</td><td>${e.category}</td><td>${getLabName(e.lab_id)}</td><td class="${statusMap[e.status]||''}">${e.status}</td><td>${e.next_maintenance?fmtDate(e.next_maintenance):'-'}</td></tr>`;
+    });
+    bodyPart += '</tbody></table>';
+  }
+
+  if(type==='maintenance') {
+    // Sejarah penyelenggaraan
+    bodyPart += '<h2 class="rpt-section-title">Sejarah Penyelenggaraan</h2>';
+    bodyPart += '<table class="rpt-table"><thead><tr><th>#</th><th>Tarikh</th><th>Peralatan</th><th>No. Aset</th><th>Jenis</th><th>Tindakan</th><th>Oleh</th></tr></thead><tbody>';
+    const sorted = [...allMaint].sort((a,b)=>new Date(b.date)-new Date(a.date));
+    sorted.forEach((m,i)=>{
+      const eq = allEq.find(e=>e.id===m.equip_id)||{};
+      bodyPart += `<tr><td>${i+1}</td><td>${fmtDate(m.date)}</td><td>${eq.name||'-'}</td><td class="td-mono">${eq.asset_no||'-'}</td><td>${m.type}</td><td>${m.notes||'-'}</td><td>${m.technician||'-'}</td></tr>`;
+    });
+    bodyPart += '</tbody></table>';
+  }
+
+  if(type==='all') {
+    // Smart Insights
+    const insights = generateInsights(filteredEq, filteredLabs, settings);
+    bodyPart += '<h2 class="rpt-section-title">Analisis &amp; Cadangan Tindakan</h2>';
+    bodyPart += '<table class="rpt-table"><thead><tr><th>Tahap</th><th>Perkara</th><th>Cadangan</th></tr></thead><tbody>';
+    insights.forEach(ins=>{
+      const lvlMap = {critical:'🔴 Kritikal',warning:'🟠 Amaran',info:'🔵 Maklumat',good:'🟢 Baik'};
+      bodyPart += `<tr><td style="white-space:nowrap">${lvlMap[ins.type]||ins.type}</td><td><strong>${ins.title}</strong></td><td>${ins.msg}</td></tr>`;
+    });
+    bodyPart += '</tbody></table>';
+  }
+
+  const footerPart = `<div class="rpt-footer">
+    <hr class="rpt-hr">
+    <div>JKE Smart Lab Analytics &bull; Politeknik Kota Bharu &bull; Dicetak pada ${dtStr}</div>
+    <div style="margin-top:4px;font-size:9pt;color:#999">Data simulasi — untuk tujuan demonstrasi sahaja</div>
+  </div>`;
+
+  return `<!DOCTYPE html><html><head><meta charset="UTF-8">
+  <title>${titles[type]}</title>
+  <style>
+    @page { size: A4; margin: 18mm 15mm 18mm 15mm; }
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family: 'Segoe UI', Arial, sans-serif; font-size: 10pt; color: #1a1a1a; background: #fff; }
+    .rpt-logos { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:10px; }
+    .rpt-logo-img { max-height:60px; max-width:120px; object-fit:contain; }
+    .rpt-title-block { flex:1; text-align:center; }
+    .rpt-inst { font-size:9pt; color:#555; }
+    .rpt-doctitle { font-size:15pt; font-weight:700; color:#0a2e1a; margin:4px 0 2px; }
+    .rpt-scope { font-size:10pt; color:#1a6b3c; font-weight:600; }
+    .rpt-meta { display:flex; justify-content:space-between; font-size:8.5pt; color:#666; margin-bottom:8px; }
+    .rpt-hr { border:none; border-top:2px solid #1a6b3c; margin:8px 0; }
+    .rpt-kpi-grid { display:flex; gap:10px; margin-bottom:14px; }
+    .rpt-kpi { flex:1; border:1px solid #ddd; border-radius:6px; padding:8px 10px; text-align:center; }
+    .rpt-kpi-val { font-size:18pt; font-weight:700; color:#1a6b3c; }
+    .rpt-kpi-lbl { font-size:8pt; color:#666; margin-top:2px; }
+    .rpt-ok .rpt-kpi-val { color:#16a34a; }
+    .rpt-br .rpt-kpi-val { color:#dc2626; }
+    .rpt-mn .rpt-kpi-val { color:#d97706; }
+    .rpt-in .rpt-kpi-val { color:#6b7280; }
+    .rpt-section-title { font-size:11pt; font-weight:700; color:#0a2e1a; border-left:4px solid #1a6b3c; padding-left:8px; margin:16px 0 8px; }
+    .rpt-table { width:100%; border-collapse:collapse; font-size:9pt; margin-bottom:14px; page-break-inside:auto; }
+    .rpt-table thead tr { background:#0a2e1a; color:#fff; }
+    .rpt-table th { padding:6px 8px; text-align:left; font-weight:600; }
+    .rpt-table td { padding:5px 8px; border-bottom:1px solid #e5e7eb; }
+    .rpt-table tbody tr:nth-child(even) { background:#f7f9f7; }
+    .rpt-table tbody tr { page-break-inside:avoid; }
+    .td-ok { color:#16a34a; font-weight:600; }
+    .td-br { color:#dc2626; font-weight:600; }
+    .td-mn { color:#d97706; font-weight:600; }
+    .td-in { color:#6b7280; }
+    .td-nw { color:#2563eb; font-weight:600; }
+    .td-mono { font-family:monospace; font-size:8.5pt; }
+    .rpt-footer { text-align:center; font-size:8.5pt; color:#888; margin-top:20px; }
+    @media print {
+      body { -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+      .rpt-table thead tr { background:#0a2e1a !important; -webkit-print-color-adjust:exact; }
+    }
+  </style></head><body>
+  ${logosPart}${kpiPart}${bodyPart}${footerPart}
+  </body></html>`;
+}
 </script>
 </body>
 </html>
